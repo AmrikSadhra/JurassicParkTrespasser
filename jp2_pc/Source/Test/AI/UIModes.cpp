@@ -1,6 +1,6 @@
 /**********************************************************************************************
  *
- * Copyright © DreamWorks Interactive. 1996
+ * Copyright ï¿½ DreamWorks Interactive. 1996
  *
  * Implementation of UIModes.hpp
  *
@@ -59,7 +59,7 @@
 #include "Lib/W95/WinInclude.hpp"
 #include "Shell\WinShell.hpp"
 
-#include "airesource.h"
+#include "AIResource.h"
 
 EUIMode		euiMode;							// A global mode value for the user interface.
 static HCURSOR hcursorModeCursor[euiEND];		// An array of cursors, one for each mode.

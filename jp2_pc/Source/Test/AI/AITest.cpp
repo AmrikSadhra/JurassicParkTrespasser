@@ -1,6 +1,6 @@
 /**********************************************************************************************
  *
- * Copyright © DreamWorks Interactive. 1996
+ * Copyright ï¿½ DreamWorks Interactive. 1996
  *
  * Implementation of AI Test.hpp.
  *
@@ -294,7 +294,7 @@
 #include "UIModes.hpp"
 #include "TestAnimal.hpp"
 #include "TestTree.hpp"
-#include "airesource.h"
+#include "AIResource.h"
 #include "QueryTest.hpp"
 #include "Lib\Loader\Loader.hpp"
 

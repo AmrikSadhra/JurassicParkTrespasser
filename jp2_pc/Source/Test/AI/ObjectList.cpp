@@ -1,7 +1,7 @@
 /**********************************************************************************************
  *
  * $Source::																				  $	
- * Copyright © DreamWorks Interactive. 1996
+ * Copyright ï¿½ DreamWorks Interactive. 1996
  *
  *		Implementation of ObjectList.hpp
  *
@@ -57,7 +57,7 @@
 
 #include "TestAnimal.hpp"
 #include "AITestShell.hpp"
-#include "airesource.h"
+#include "AIResource.h"
 
 //*********************************************************************************************
 //
