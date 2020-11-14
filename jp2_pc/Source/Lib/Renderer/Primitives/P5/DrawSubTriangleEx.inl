@@ -1,6 +1,6 @@
 /***********************************************************************************************
  *
- * Copyright © DreamWorks Interactive, 1997.
+ * Copyright ï¿½ DreamWorks Interactive, 1997.
  *
  * Contents:
  *		Specialized (non-template) versions of the DrawSubtriangle function.
@@ -1062,225 +1062,123 @@ FINISH_LOOPING:
 //
 void DrawSubtriangle(TCopyPersp* pscan, CDrawPolygon<TCopyPersp>* pdtri)
 {
-	::fixed fx_inc;
-	::fixed fx_diff;
-	float f_inc_uinvz;
-	float f_inc_vinvz;
-	float f_inc_invz;
-
 	TCopyPersp* plinc = &pdtri->pedgeBase->lineIncrement;
+
+        ::fixed fx_inc = plinc->fxX;
+        ::fixed fx_diff = plinc->fxXDifference;
+
+        //
+        // Local copies of edge stepping values.
+        //
+        float f_inc_uinvz = plinc->indCoord.fUInvZ;
+        float f_inc_vinvz = plinc->indCoord.fVInvZ;
+        float f_inc_invz = plinc->indCoord.fInvZ;
+
+        // eax == plinc
+        // esi == pdtri
+        // ecx == pscan
+
+        //
+        // Iterate through the scanlines that intersect the subtriangle.
+        //
+Y_LOOP:
+        // TODO: Remove this
+        __asm
+        {
+                push ebp
+        }
+
+        // Check to see if we should skip this scanline.
+        if(pdtri->iY & bEvenScanlinesOnly)
+        {
+          goto END_OF_SCANLINE;
+        }
+
+        int32_t from = (pscan->fxX.i4Fx + pdtri->fxLineLength.i4Fx) >> 16u;
+        int32_t to = (pscan->fxX.i4Fx >> 16u) - from; // i_pixel
+        int32_t screen_index = pdtri->iLineStartIndex + from;
+        if(to >= 0)
+        {
+            goto END_OF_SCANLINE;
+        }
+
+        i_screen_index = screen_index;
+        i_pixel = to;
+
+        //
+        // Calculate values for the first correction span, and start the divide for
+        // the next span.
+        //
+
+        // Copy global texture values.
+        fGUInvZ = pscan->indCoord.fUInvZ;
+        fGVInvZ = pscan->indCoord.fVInvZ;
+        fGInvZ = pscan->indCoord.fInvZ;
+
+        fDUInvZScanline = fDUInvZEdge;
+        fDVInvZScanline = fDVInvZEdge;
+        fDInvZScanline = fDInvZEdge;
+
+        // scan line is +ve
+        i_pixel += iSubdivideLen;
+        if(i_pixel > 0)
+        {
+          goto PARTIAL_SUBDIVIDE_POS;
+        }
+
+        // Check alignment.
+        // TODO: Maybe simplify? /AS
+        // screen_index = (screen_index + i_pixel) * 2;
+        screen_index += i_pixel;      // i_screen_index + i_pixel
+        screen_index += screen_index; // (i_screen_index + i_pixel) * 2
+        if((screen_index & 0x3) == 0)
+        {
+           goto DONE_DIVIDE_PIXEL; // loop break
+        }
+
+        // We are using subdivide length - 1 for alignment.
+        fDUInvZScanline = fDUInvZEdgeMinusOne;
+        fDVInvZScanline = fDVInvZEdgeMinusOne;
+        fDInvZScanline = fDInvZEdgeMinusOne;
+
+        --i_pixel;
+
+        goto DONE_DIVIDE_PIXEL; // loop break
+
+PARTIAL_SUBDIVIDE_POS:
+        // calc the new +ve ratio
+        auto f_pixel = (float) i_pixel;
+        i_pixel = 0;
+        float C = -fInvSubdivideLen * f_pixel;
+
+        fDUInvZScanline = fDUInvZScanline * C; // U * C
+        fDVInvZScanline = fDVInvZScanline * C; // V * C
+        fDInvZScanline  = fDInvZScanline * C;  // Z * C
+
+DONE_DIVIDE_PIXEL:
+        // Get current u, v and z values.
+        iNextSubdivide = i_pixel;
+        f_z = 1.f/fGInvZ; // TODO: This bypasses the Netwon-Raphson code, will cause minor render mismatch (hopefully in a good way) /AS
+
+        // Set current texture coordinates (clamped).
+        f_u = fGUInvZ * f_z;
+        f_v = fGVInvZ * f_z;
+
+        SetMinMax(f_u, fTexEdgeTolerance, fTexWidth);
+        SetMinMax(f_v, fTexEdgeTolerance, fTexHeight);
+
+        // Increment u, v and z values.
+        fGUInvZ += fDUInvZScanline;
+        fGVInvZ += fDVInvZScanline;
+        fGInvZ  += fDInvZScanline;
 
 	__asm
 	{
-		//
-		// Local copies of edge stepping values.
-		//
-		// fixed fx_inc  = pdtri->pedgeBase->lineIncrement.fxX;
-		// fixed fx_diff = pdtri->pedgeBase->lineIncrement.fxXDifference;
-		// float f_inc_uinvz = pdtri->pedgeBase->lineIncrement.indCoord.fUInvZ;
-		// float f_inc_vinvz = pdtri->pedgeBase->lineIncrement.indCoord.fVInvZ;
-		// float f_inc_invz  = pdtri->pedgeBase->lineIncrement.indCoord.fInvZ;
-		//
-		mov		eax,[plinc]
-
-		mov		esi,[pdtri]							// Pointer to polygon object.
-		mov		ecx,[pscan]							// Pointer to scanline object.
-
-		mov		ebx,[eax]TCopyPersp.fxX
-		mov		edx,[eax]TCopyPersp.fxXDifference
-
-		mov		fx_inc,ebx
-		mov		fx_diff,edx
-
-		mov		ebx,[eax]TCopyPersp.indCoord.fUInvZ
-		mov		edx,[eax]TCopyPersp.indCoord.fVInvZ
-
-		mov		f_inc_uinvz,ebx
-		mov		ebx,[eax]TCopyPersp.indCoord.fInvZ
-
-		mov		f_inc_vinvz,edx
-		mov		f_inc_invz,ebx
-
-		//
-		// Iterate through the scanlines that intersect the subtriangle.
-		//
-Y_LOOP:
-		push	ebp									// Save ebp.
-
-		// Check to see if we sould skip this scanline.
-		mov		eax,[esi]CDrawPolygonBase.iY
-		mov		ebx,[bEvenScanlinesOnly]
-
-		and		eax,ebx
-		jnz		END_OF_SCANLINE
-
-		mov		ebx,[ecx]TCopyPersp.fxX.i4Fx
-		mov		eax,[esi]CDrawPolygonBase.fxLineLength.i4Fx
-
-		add		ebx,eax
-		mov		eax,[ecx]TCopyPersp.fxX.i4Fx
-
-		sar		ebx,16
-		mov		edx,[esi]CDrawPolygonBase.iLineStartIndex
-
-		sar		eax,16
-		add		edx,ebx
-
-		sub		eax,ebx									// i_pixel
-		jge		END_OF_SCANLINE
-
-		mov		[i_screen_index],edx
-		mov		[i_pixel],eax
-
-		//---------------------------------------------------------------------------
-		// Caclulate values for the first correction span, and start the divide for
-		// the next span.
-		//
-
-		// Copy global texture values.
-		mov		ebx,[ecx]TCopyPersp.indCoord.fUInvZ
-		mov		esi,[ecx]TCopyPersp.indCoord.fVInvZ
-
-		mov		edi,[ecx]TCopyPersp.indCoord.fInvZ
-		mov		[fGUInvZ],ebx
-
-		mov		[fGVInvZ],esi
-		mov		[fGInvZ],edi
-
-		mov		ebx,[fDUInvZEdge]
-		mov		esi,[fDVInvZEdge]
-
-		mov		edi,[fDInvZEdge]
-		mov		[fDUInvZScanline],ebx
-
-		mov		[fDVInvZScanline],esi
-		mov		[fDInvZScanline],edi
-
-		mov		ebx,[iSubdivideLen]
-
-		// scan line is +ve
-		add		eax,ebx
-		jg		short PARTIAL_SUBDIVIDE_POS
-
-		// Check alignment.
-		add		edx,eax						// i_screen_index + i_pixel
-		add		edx,edx						// (i_screen_index + i_pixel) * 2
-
-		and		edx,3
-		jz		short DONE_DIVIDE_PIXEL
-
-		// We are using subdivide length - 1 for alignment.
-		mov		ebx,[fDUInvZEdgeMinusOne]
-		mov		esi,[fDVInvZEdgeMinusOne]
-
-		mov		edi,[fDInvZEdgeMinusOne]
-		mov		[fDUInvZScanline],ebx
-
-		mov		[fDVInvZScanline],esi
-		mov		[fDInvZScanline],edi
-
-		dec		eax
-		jmp		DONE_DIVIDE_PIXEL
-
-PARTIAL_SUBDIVIDE_POS:
-		// calc the new +ve ratio
-		fild	[i_pixel]
-		fld		fInvSubdivideLen
-		fchs
-		xor		eax,eax
-		fmulp	st(1),st(0)			// st(0) = (-)fInvSubdivideLen * i_pixel;
-		fld		fDUInvZScanline		// U C
-		// stall(1)
-		fmul	st(0),st(1)			// U*C C
-		fxch	st(1)				// C U*C
-		fld		fDVInvZScanline		// V C U*C
-		fxch	st(1)				// C V U*C
-		fmul	st(1),st(0)			// C V*C U*C
-		// stall(1)
-		fmul	fDInvZScanline		// Z*C V*C U*C
-		fxch	st(2)				// U*C V*C Z*C
-		fstp	fDUInvZScanline		// V*C Z*C
-		fstp	fDVInvZScanline		// Z*C
-		fstp	fDInvZScanline
-
-DONE_DIVIDE_PIXEL:
-		// Get current u, v and z values.
-		mov		[iNextSubdivide],eax
-		mov		ebx,dword ptr[fGInvZ]		// f_z = fInverse(fGInvZ);
-
-		mov		eax,iFI_SIGN_EXPONENT_SUB
-
-		sub		eax,ebx
-		and		ebx,iFI_MASK_MANTISSA
-
-		sar		ebx,iSHIFT_MANTISSA
-		and		eax,iFI_MASK_SIGN_EXPONENT
-
-		fld		[fGUInvZ]					// U/Z
-
-		add		eax,dword ptr[i4InverseMantissa + ebx*4]
-		mov		ebx,[bClampUV]
-
-		mov		dword ptr[f_z],eax
-
-#if (VER_CLAMP_UV_16BIT==TRUE)
-
-		//---------------------------------------------------------------------------
-		// Set current texture coordinates (clamped).
-		fmul	[f_z]
-		fld		[fGVInvZ]
-		fmul	[f_z]
-		fxch	st(1)
-		// stall(1)
-		fstp	[f_u]
-
-		// Clamp f_u			
-		mov		eax,[f_u]
-		mov		ebx,fTexEdgeTolerance
-		mov		ecx,fTexWidth
-		cmp		eax,ebx
-		jge		short U_NOT_LESS1
-		mov		eax,ebx
-U_NOT_LESS1:
-		cmp		eax,ecx
-		jle		short U_NOT_GREATER1
-		mov		eax,ecx
-U_NOT_GREATER1:
-		mov		ecx,fTexHeight
-		mov		[f_u],eax
-		fld		[f_u]
-
-		fadd	[dFastFixed16Conversion]
-		fxch	st(1)
-
-		// Clamp f_v
-		fstp	[f_v]
-		mov		eax,[f_v]
-		cmp		eax,ebx
-		jge		short V_NOT_LESS1
-		mov		eax,ebx
-V_NOT_LESS1:
-		cmp		eax,ecx
-		jle		short V_NOT_GREATER1
-		mov		eax,ecx
-V_NOT_GREATER1:
-		mov		[f_v],eax
-		fld		[f_v]
-
-		fadd	[dFastFixed16Conversion]
-		fxch	st(1)
-		fstp	[d_temp_a]
-		fld		[fGUInvZ]
-		fxch	st(1)
-		fstp	[d_temp_b]
-
-		// Increment u, v and z values.
-		fadd	[fDUInvZScanline]
-		fld		[fGVInvZ]
-		fadd	[fDVInvZScanline]
-		fxch	st(1)
-		fld		[fGInvZ]
-		fadd	[fDInvZScanline]
+                // TODO: Temporary FPU state patch to bridge C to ASM /AS
+                fld [fGVInvZ]
+                fld [fGUInvZ]
+                fld [fGInvZ]
+                // ---------------------------------------------------------------
 
 		// Setup esi=uFrac, ecx=vFrac, edx=UVInt for Abrash texture loop.
 		mov		edx,dword ptr[d_temp_a]			// U (16.16)
@@ -1370,92 +1268,6 @@ V_NOT_GREATER2:
 
 		fld		[fV]							// V U-fu
 
-#else // (VER_CLAMP_UV_16BIT==TRUE)
-
-		//---------------------------------------------------------------------------
-		// Set current texture coordinates (not clamped).
-		fmul	[f_z]						// U
-		fld		[fGVInvZ]					// V/Z U
-		fmul	[f_z]						// V U
-		fxch	st(1)						// U V
-		// stall(1)
-		fst		[f_u]
-		fadd	[dFastFixed16Conversion]	// iU V
-		fxch	st(1)						// V iU
-		fst		[f_v]						
-		fadd	[dFastFixed16Conversion]	// iV iU
-		fxch	st(1)						// iU iV
-		fstp	[d_temp_a]					// iV
-		fld		[fGUInvZ]					// U/Z iV
-		fxch	st(1)						// iV U/Z
-		fstp	[d_temp_b]					// U/Z
-
-		// Increment u, v and z values.
-		fadd	[fDUInvZScanline]			// U2/Z
-		fld		[fGVInvZ]
-		fadd	[fDVInvZScanline]			// V2/Z U2/Z
-		fxch	st(1)						// U2/Z V2/Z
-		fld		[fGInvZ]					// 1/Z U2/Z V2/Z
-		fadd	[fDInvZScanline]			// 1/Z2 U2/Z V2/Z
-
-		// Setup esi=uFrac, ecx=vFrac, edx=UVInt for Abrash texture loop.
-		mov		edx,dword ptr[d_temp_a]			// U (16.16)
-		mov		eax,dword ptr[d_temp_b]			// V (16.16)
-
-		sar		eax,16							// Integral V
-		mov		ecx,[iTexWidth]					// Texture width.
-
-		imul	eax,ecx							// iv*twidth
-
-		sar		edx,16							// Integral U
-		mov		esi,dword ptr[d_temp_a]			// Copy of U
-
-		shl		esi,16							// UFrac
-		mov		ecx,dword ptr[d_temp_b]			// Copy of V
-
-		shl		ecx,16							// VFrac
-		mov		ebx,[pvTextureBitmap]			// Texture base pointer.
-
-		shr		ebx,1							// Into pixel offset.
-		add		edx,eax							// iu + iv*twidth
-
-		add		edx,ebx							// Add to edx.
-
-		fstp	[fGInvZ]
-
-		// Get next u, v and z values.
-		mov		ebx,dword ptr[fGInvZ]			// f_next_z = fInverse(fGInvZ);
-		mov		eax,iFI_SIGN_EXPONENT_SUB
-
-		sub		eax,ebx
-		and		ebx,iFI_MASK_MANTISSA
-
-		sar		ebx,iSHIFT_MANTISSA
-		and		eax,iFI_MASK_SIGN_EXPONENT
-
-		fst		[fGUInvZ]
-
-		mov		ebx,dword ptr[i4InverseMantissa + ebx*4]
-		mov		edi,[i_pixel]
-
-		add		eax,ebx
-		mov		ebx,[iNextSubdivide]
-
-		mov		dword ptr[f_next_z],eax
-		sub		edi,ebx
-
-		// Set new texture coordinate increments.
-		fmul	[f_next_z]						// U,V/Z
-		fxch	st(1)							// V/Z,U
-		fst		[fGVInvZ]
-		fmul	[f_next_z]						// V,U
-		fxch	st(1)							// U,V
-		fst		[fU]							// U,V
-		fsub	[f_u]							// U-fu,V
-		fxch	st(1)							// V,U-fu
-		fst		[fV]
-
-#endif // (VER_CLAMP_UV_16BIT==TRUE)
 
 		// ---------------------------------------------------------------------------------
 		// Both clmaped and non-clamped primitives end up here..
