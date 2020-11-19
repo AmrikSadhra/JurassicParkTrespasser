@@ -21,7 +21,7 @@
  * 
  * 18    97.11.05 7:51p Mmouni
  * Made new terrain fog mask code faster.
- * 
+ *
  * 17    97/11/05 2:50p Pkeet
  * Added 8 band alpha fog for terrain.
  * 
@@ -30,13 +30,13 @@
  * 
  * 15    10/10/97 1:47p Mmouni
  * All inner loops are now left to right only, and optimized some.
- * 
+ *
  * 14    9/30/97 9:32p Mmouni
  * Made seperate routines for 16-bit copy and terrain polygons.
- * 
+ *
  * 13    9/29/97 11:49a Mmouni
  * Optimized, now has support for fogging.
- * 
+ *
  * 12    9/15/97 2:10p Mmouni
  * Optimized inner loops (not final yet).
  * 
@@ -317,7 +317,7 @@ DONE_DIVIDE_PIXEL:
 		// stall(1)
 		fstp	[f_u]
 
-		// Clamp f_u			
+		// Clamp f_u
 		mov		eax,[f_u]
 		mov		ebx,fTexEdgeTolerance
 		mov		ecx,fTexWidth
@@ -419,7 +419,7 @@ V_NOT_GREATER1:
 		fxch	st(1)
 		fstp	[fU]			// V
 
-		// Clamp fU			
+		// Clamp fU
 		mov		eax,[fU]
 		mov		ebx,fTexEdgeTolerance
 		mov		ebp,fTexWidth
@@ -968,7 +968,7 @@ DONE_DIVIDE_PIXEL_CACHE_END:
 		// When the sub divide equals the cached sub-divide we end up here but
 		// there is an element left on the fp stack.
 EXIT_BEGIN_NEXT_QUICK_END:
-		
+
 		// Dump value on stack
 		ffree	st(0)
 		fincstp
@@ -1064,15 +1064,15 @@ void DrawSubtriangle(TCopyPersp* pscan, CDrawPolygon<TCopyPersp>* pdtri)
 {
 	TCopyPersp* plinc = &pdtri->pedgeBase->lineIncrement;
 
-        ::fixed fx_inc = plinc->fxX;
-        ::fixed fx_diff = plinc->fxXDifference;
+        fx_inc = plinc->fxX;
+        fx_diff = plinc->fxXDifference;
 
         //
         // Local copies of edge stepping values.
         //
-        float f_inc_uinvz = plinc->indCoord.fUInvZ;
-        float f_inc_vinvz = plinc->indCoord.fVInvZ;
-        float f_inc_invz = plinc->indCoord.fInvZ;
+        f_inc_uinvz = plinc->indCoord.fUInvZ;
+        f_inc_vinvz = plinc->indCoord.fVInvZ;
+        f_inc_invz = plinc->indCoord.fInvZ;
 
         // eax == plinc
         // esi == pdtri
@@ -1094,8 +1094,8 @@ Y_LOOP:
             goto END_OF_SCANLINE;
         }
 
-        int32_t from = (pscan->fxX.i4Fx + pdtri->fxLineLength.i4Fx) >> 16u;
-        int32_t to = (pscan->fxX.i4Fx >> 16u) - from; // i_pixel
+        int32_t from = ((uint32_t)pscan->fxX.i4Fx + pdtri->fxLineLength.i4Fx) >> 16u;
+        int32_t to = ((uint32_t)pscan->fxX.i4Fx >> 16u) - from; // i_pixel
         int32_t screen_index = pdtri->iLineStartIndex + from;
         if(to >= from)
         {
@@ -1126,11 +1126,7 @@ Y_LOOP:
         }
 
         // Check alignment.
-        // TODO: Maybe simplify? /AS
-        // screen_index = (screen_index + i_pixel) * 2;
-        screen_index += i_pixel;      // i_screen_index + i_pixel
-        screen_index += screen_index; // (i_screen_index + i_pixel) * 2
-        if((screen_index & 0x3u) == 0)
+        if(((((uint32_t)i_screen_index + i_pixel) * 2) & 0x3u) == 0)
         {
            goto DONE_DIVIDE_PIXEL; // loop break
         }
@@ -1159,110 +1155,60 @@ DONE_DIVIDE_PIXEL:
         f_u = fGUInvZ * f_z;
         f_v = fGVInvZ * f_z;
 
-        SetMinMax(f_u, fTexEdgeTolerance, fTexWidth);
-        SetMinMax(f_v, fTexEdgeTolerance, fTexHeight);
+        if(bClampUV)
+        {
+                SetMinMax(f_u, fTexEdgeTolerance, fTexWidth);
+                SetMinMax(f_v, fTexEdgeTolerance, fTexHeight);
+        }
 
         // Increment u, v and z values.
         fGUInvZ += fDUInvZScanline;
         fGVInvZ += fDVInvZScanline;
         fGInvZ  += fDInvZScanline;
 
+        // TODO: These *might* be wrong, maybe not f_u, but some other FPU intermediate
         d_temp_a = f_u + dFastFixed16Conversion; // TODO: Improve 16.16 Fixed conversion accuracy with * 65536.f;
         d_temp_b = f_v + dFastFixed16Conversion; //
 
+        // Setup esi=uFrac, ecx=vFrac, edx=UVInt for Abrash texture loop.
+        uint32_t edx = (uint32_t)d_temp_a >> 16u; // Integral U ([16].16)
+        uint32_t eax = (uint32_t)d_temp_b >> 16u; // Integral V ([16].16)
+        eax = eax * iTexWidth;                    // iv*twidth
+
+        uint32_t esi = (uint32_t)d_temp_a << 16u;  // UFrac
+        uint32_t ecx = (uint32_t)d_temp_b << 16u;  // VFrac
+
+        // TODO: Omfg
+        uint32_t ebx = (uint32_t)pvTextureBitmap; // Texture base pointer.
+        ebx = ebx >> 1;                           // Into pixel offset.
+        edx = edx + eax;                          // iu + iv*twidth
+        edx = edx + ebx;                          // Add to edx.
+
+        // Get next u, v and z values.
+        f_next_z = 1.f/fGInvZ;
+
+        // copies
+        float f_inv_pixel = fUnsignedInverseInt(i_pixel - iNextSubdivide);
+
+        fU = fGUInvZ * f_next_z;
+        fV = fGVInvZ * f_next_z;
+
+        // Clamp fU, fV
+        SetMinMax(fU, fTexEdgeTolerance, fTexWidth);
+        SetMinMax(fV, fTexEdgeTolerance, fTexHeight);
+
+        w2dDeltaTex.Initialize
+        (
+          (fU - f_u) * f_inv_pixel,
+          (fV - f_v) * f_inv_pixel,
+          iTexWidth
+        );
+
+
 	__asm
-	{
-		// Setup esi=uFrac, ecx=vFrac, edx=UVInt for Abrash texture loop.
-		mov		edx,dword ptr[d_temp_a]			// U (16.16)
-		mov		eax,dword ptr[d_temp_b]			// V (16.16)
-
-		sar		eax,16							// Integral V
-		mov		ecx,[iTexWidth]					// Texture width.
-
-		imul	eax,ecx							// iv*twidth
-
-		sar		edx,16							// Integral U
-		mov		esi,dword ptr[d_temp_a]			// Copy of U
-
-		shl		esi,16							// UFrac
-		mov		ecx,dword ptr[d_temp_b]			// Copy of V
-
-		shl		ecx,16							// VFrac
-		mov		ebx,[pvTextureBitmap]			// Texture base pointer.
-
-		shr		ebx,1							// Into pixel offset.
-		add		edx,eax							// iu + iv*twidth
-
-		add		edx,ebx							// Add to edx.
-
-		fstp	[fGInvZ]
-
-		// Get next u, v and z values.
-		mov		ebx,dword ptr[fGInvZ]			// f_next_z = fInverse(fGInvZ);
-		mov		eax,iFI_SIGN_EXPONENT_SUB
-
-		sub		eax,ebx
-		and		ebx,iFI_MASK_MANTISSA
-
-		sar		ebx,iSHIFT_MANTISSA
-		and		eax,iFI_MASK_SIGN_EXPONENT
-
-		fst		[fGUInvZ]
-
-		mov		ebx,dword ptr[i4InverseMantissa + ebx*4]
-		mov		edi,[i_pixel]
-
-		add		eax,ebx
-		mov		ebx,[iNextSubdivide]
-
-		mov		dword ptr[f_next_z],eax
-		sub		edi,ebx
-
-		// Set new texture coordinate increments.
-		fmul	[f_next_z]
-		fxch	st(1)
-		fst		[fGVInvZ]
-		fmul	[f_next_z]
-		fxch	st(1)
-		fstp	[fU]			// V
-
-		// Clamp fU			
-		mov		eax,[fU]
-		mov		ebx,fTexEdgeTolerance
-		mov		ebp,fTexWidth
-		cmp		eax,ebx
-		jge		short U_NOT_LESS2
-		mov		eax,ebx
-U_NOT_LESS2:
-		cmp		eax,ebp
-		jle		short U_NOT_GREATER2
-		mov		eax,ebp
-U_NOT_GREATER2:
-		mov		ebp,fTexHeight
-		mov		[fU],eax
-
-		fld		[fU]							// U,V
-		fsub	[f_u]							// U-fu,V
-		fxch	st(1)							// V,U-fu
-		fstp	[fV]							// U-fu
-
-		// Clamp fV
-		mov		eax,[fV]
-		cmp		eax,ebx
-		jge		short V_NOT_LESS2
-		mov		eax,ebx
-V_NOT_LESS2:
-		cmp		eax,ebp
-		jle		short V_NOT_GREATER2
-		mov		eax,ebp
-V_NOT_GREATER2:
-		mov		[fV],eax
-
-		fld		[fV]							// V U-fu
-
-
+        {
 		// ---------------------------------------------------------------------------------
-		// Both clmaped and non-clamped primitives end up here..
+		// Both clamped and non-clamped primitives end up here..
 		fsub	[f_v]								// V-fv,U-fu
 		fxch	st(1)								// U,V
 		fmul	float ptr[fInverseIntTable+edi*4]	// (C*U),V
@@ -1310,7 +1256,7 @@ V_NOT_GREATER2:
 
 		//iCacheNextSubdivide = iSetNextDividePixel(iNextSubdivide);
 		mov		edi,[iSubdivideLen]
-		
+
 		// scan line is +ve
 		add		eax,edi
 		jle		short DONE_DIVIDE_PIXEL_CACHE
@@ -1668,7 +1614,7 @@ EXIT_BEGIN_NEXT_QUICK_END:
 		// there is an element left on the fp stack.
 		// This is never called unless there is something wrong with the loop
 		// counter.
-		
+
 		// Dump value on stack
 		fcomp	st(0)
 		jmp		SUBDIVISION_LOOP
@@ -2050,7 +1996,7 @@ EDGE_DONE:
 //******************************
 void DrawSubtriangle(TCopyLinearTrans* pscan, CDrawPolygon<TCopyLinearTrans>* pdtri)
 {
-	static void* pvLastTexture = 0;	
+	static void* pvLastTexture = 0;
 	TCopyLinearTrans* plinc = &pdtri->pedgeBase->lineIncrement;
 
 	_asm
@@ -2584,7 +2530,7 @@ DONE_DIVIDE_PIXEL:
 		// stall(1)
 		fstp	[f_u]
 
-		// Clamp f_u			
+		// Clamp f_u
 		mov		eax,[f_u]
 		mov		ebx,fTexEdgeTolerance
 		mov		ecx,fTexWidth
@@ -2681,7 +2627,7 @@ V_NOT_GREATER1:
 		fxch	st(1)
 		fstp	[fU]			// V
 
-		// Clamp fU			
+		// Clamp fU
 		mov		eax,[fU]
 		mov		ebx,fTexEdgeTolerance
 		mov		ebp,fTexWidth
@@ -2846,7 +2792,7 @@ V_NOT_GREATER2:
 
 		//iCacheNextSubdivide = iSetNextDividePixel(iNextSubdivide);
 		mov		edi,[iSubdivideLen]
-		
+
 		// scan line is +ve
 		add		eax,edi
 		jle		short DONE_DIVIDE_PIXEL_CACHE
@@ -3239,7 +3185,7 @@ EXIT_BEGIN_NEXT_QUICK_END:
 		// there is an element left on the fp stack.
 		// This is never called unless there is something wrong with the loop
 		// counter.
-		
+
 		// Dump value on stack
 		ffree	st(0)
 		fincstp
