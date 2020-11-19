@@ -1091,13 +1091,13 @@ Y_LOOP:
         // Check to see if we should skip this scanline.
         if(pdtri->iY & bEvenScanlinesOnly)
         {
-          goto END_OF_SCANLINE;
+            goto END_OF_SCANLINE;
         }
 
         int32_t from = (pscan->fxX.i4Fx + pdtri->fxLineLength.i4Fx) >> 16u;
         int32_t to = (pscan->fxX.i4Fx >> 16u) - from; // i_pixel
         int32_t screen_index = pdtri->iLineStartIndex + from;
-        if(to >= 0)
+        if(to >= from)
         {
             goto END_OF_SCANLINE;
         }
@@ -1120,8 +1120,7 @@ Y_LOOP:
         fDInvZScanline = fDInvZEdge;
 
         // scan line is +ve
-        i_pixel += iSubdivideLen;
-        if(i_pixel > 0)
+        if((i_pixel + iSubdivideLen) > 0)
         {
           goto PARTIAL_SUBDIVIDE_POS;
         }
@@ -1131,7 +1130,7 @@ Y_LOOP:
         // screen_index = (screen_index + i_pixel) * 2;
         screen_index += i_pixel;      // i_screen_index + i_pixel
         screen_index += screen_index; // (i_screen_index + i_pixel) * 2
-        if((screen_index & 0x3) == 0)
+        if((screen_index & 0x3u) == 0)
         {
            goto DONE_DIVIDE_PIXEL; // loop break
         }
@@ -1141,15 +1140,11 @@ Y_LOOP:
         fDVInvZScanline = fDVInvZEdgeMinusOne;
         fDInvZScanline = fDInvZEdgeMinusOne;
 
-        --i_pixel;
-
         goto DONE_DIVIDE_PIXEL; // loop break
 
 PARTIAL_SUBDIVIDE_POS:
         // calc the new +ve ratio
-        auto f_pixel = (float) i_pixel;
-        i_pixel = 0;
-        float C = -fInvSubdivideLen * f_pixel;
+        float C = -fInvSubdivideLen * (float) i_pixel;
 
         fDUInvZScanline = fDUInvZScanline * C; // U * C
         fDVInvZScanline = fDVInvZScanline * C; // V * C
@@ -1157,8 +1152,8 @@ PARTIAL_SUBDIVIDE_POS:
 
 DONE_DIVIDE_PIXEL:
         // Get current u, v and z values.
-        iNextSubdivide = i_pixel;
-        f_z = 1.f/fGInvZ; // TODO: This bypasses the Netwon-Raphson code, will cause minor render mismatch (hopefully in a good way) /AS
+        iNextSubdivide = i_pixel - 1;
+        f_z = 1.f/fGInvZ;
 
         // Set current texture coordinates (clamped).
         f_u = fGUInvZ * f_z;
@@ -1172,14 +1167,11 @@ DONE_DIVIDE_PIXEL:
         fGVInvZ += fDVInvZScanline;
         fGInvZ  += fDInvZScanline;
 
+        d_temp_a = f_u + dFastFixed16Conversion; // TODO: Improve 16.16 Fixed conversion accuracy with * 65536.f;
+        d_temp_b = f_v + dFastFixed16Conversion; //
+
 	__asm
 	{
-                // TODO: Temporary FPU state patch to bridge C to ASM /AS
-                fld [fGVInvZ]
-                fld [fGUInvZ]
-                fld [fGInvZ]
-                // ---------------------------------------------------------------
-
 		// Setup esi=uFrac, ecx=vFrac, edx=UVInt for Abrash texture loop.
 		mov		edx,dword ptr[d_temp_a]			// U (16.16)
 		mov		eax,dword ptr[d_temp_b]			// V (16.16)
